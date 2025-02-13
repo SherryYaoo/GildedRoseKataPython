@@ -17,55 +17,93 @@ class GildedRose(object):
     def __init__(self, items: list[Item]):
         # DO NOT CHANGE THIS ATTRIBUTE!!!
         self.items = items
-
+    
     def update_quality(self):
         for item in self.items:
-            # Special processing logic for Sulfuras: never has to be sold or decreases in Quality
-            if item.name == "Sulfuras":
-                item.sell_in -= 1
-                continue
-            
-            # Handle different item types
-            if item.name == "Aged Brie":
-                self.increase_quality(item)
-            elif item.name == "Backstage passes to a TAFKAL80ETC concert":
-                self.update_backstage_pass(item)
-            elif "Conjured" in item.name:
-                self.decrease_quality(item, 2)  # Conjured items degrade twice as fast
-            else:
-                self.decrease_quality(item)
+            updater = self.get_updater(item)
+            updater.update(item)
 
-            # Reduce sell_in and handle expired items
-            item.sell_in -= 1
-            if item.sell_in < 0:
-                if item.name == "Aged Brie":
-                    self.increase_quality(item)
-                elif item.name == "Backstage passes to a TAFKAL80ETC concert":
-                    item.quality = 0  # Quality drops to 0 after concert
-                else:
-                    self.decrease_quality(item)
+    # Determine goods types
+    def get_updater(self, item):
+        if item.name == "Aged Brie":
+            return AgedBrieUpdater()
+        elif item.name == "Sulfuras":
+            return SulfurasUpdater()
+        elif item.name == "Backstage passes to a TAFKAL80ETC concert":
+            return BackstagePassUpdater()
+        elif "Conjured" in item.name:
+            return ConjuredUpdater()
+        else:
+            return StandardUpdater()
+        
+    # Return all item names
+    def get_items(self):
+        return [item.name for item in self.items]
 
+    # Remove an item
+    def remove_item(self, item_name):
+        self.items = [item for item in self.items if item.name != item_name]
+
+
+class UpdaterOperation:
+    def update(self, item):
+        pass
+    
+    # Decrease quality, never below 0
+    def decrease_quality(self, item, amount=1):
+        item.quality = max(0, item.quality - amount)
+        
     # Increase quality, max 50
     def increase_quality(self, item, amount=1):
         item.quality = min(50, item.quality + amount)
         
-    # Decrease quality, never below 0
-    def decrease_quality(self, item, amount=1):
-        item.quality = max(0, item.quality - amount)
+    # Decrease the number of days we have to sell the item
+    def decrease_sell_in(self, item):
+        item.sell_in -= 1
 
-    # Special processing logic for Backstage: quality increases more as sell_in decreases
-    def update_backstage_pass(self, item):
+
+class StandardUpdater(UpdaterOperation):
+    def update(self, item):
+        self.decrease_quality(item)
+        self.decrease_sell_in(item)
+        if item.sell_in < 0:
+            self.decrease_quality(item)
+
+
+# Aged Brie: actually increases in Quality the older it gets
+class AgedBrieUpdater(UpdaterOperation):
+    def update(self, item):
+        self.increase_quality(item)
+        self.decrease_sell_in(item)
+        if item.sell_in < 0:
+            self.increase_quality(item)
+
+
+# Sulfuras: never has to be sold or decreases in Quality
+class SulfurasUpdater(UpdaterOperation):
+    def update(self, item):
+        item.sell_in -= 1  # Sulfuras still reduces sell_in
+
+
+# Backstage passes: increases in Quality as its SellIn value approaches
+class BackstagePassUpdater(UpdaterOperation):
+    def update(self, item):
         if item.sell_in > 10:
             self.increase_quality(item)
         elif item.sell_in > 5:
             self.increase_quality(item, 2)
         elif item.sell_in > 0:
             self.increase_quality(item, 3)
-            
-    # Return all item names                   
-    def get_items(self):
-        return [item.name for item in self.items]
-    
-    # Remove an item    
-    def remove_item(self, item_name):
-        self.items = [item for item in self.items if item.name != item_name]
+        else:
+            item.quality = 0
+
+        self.decrease_sell_in(item)
+
+
+# Conjured: degrade twice as fast
+class ConjuredUpdater(UpdaterOperation):
+    def update(self, item):
+        self.decrease_quality(item, 2)
+        self.decrease_sell_in(item)
+        if item.sell_in < 0:
+            self.decrease_quality(item, 2)
